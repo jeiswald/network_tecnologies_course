@@ -1,37 +1,51 @@
 import java.io.IOException;
-import java.net.InetAddress;
-import java.net.MulticastSocket;
+import java.net.*;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 import static java.lang.Integer.parseInt;
 
 public class Main {
+
     public static void main(String[] args) {
         InetAddress address;
         int port;
-        MulticastSocket socket;
+        MulticastSocket receiveSocket;
+        //DatagramSocket sendSocket;
+
+        Map<InetAddress, Date> copiesOnline = new HashMap<>();
+
         try {
             address = InetAddress.getByName(args[0]);
             port = parseInt(args[1]);
-            socket = new MulticastSocket(port);
+            receiveSocket = new MulticastSocket(port);
+            //sendSocket = new DatagramSocket();
+            receiveSocket.joinGroup(new InetSocketAddress(address, port), NetworkInterface.getByInetAddress(address));
+            receiveSocket.isClosed();
         } catch (IOException e) {
             e.printStackTrace();
             return;
         }
 
-        try (socket) {
-            socket.joinGroup(address);
-            Listener listener = new Listener(address, socket, port);
+        try {
+            Runtime current = Runtime.getRuntime();
+            current.addShutdownHook(new Thread(() -> {
+                System.out.println("In clean up code");
+                System.out.println("In shutdown hook");
+            }));
+
+            Listener listener = new Listener(receiveSocket, copiesOnline);
+            Sender sender = new Sender(address, receiveSocket, port, copiesOnline);
             listener.start();
-            Sender sender = new Sender(address, socket, port);
-            sender.start();
+            sender.run();
+
             if (!listener.isAlive() && !sender.isAlive()) {
-                socket.leaveGroup(address);
+                receiveSocket.leaveGroup(new InetSocketAddress(address, port), NetworkInterface.getByInetAddress(address));
             }
-        } catch (IOException e) {
+        } catch (
+                IOException e) {
             e.printStackTrace();
-        }
-        finally {
-            socket.close();
         }
     }
 }
