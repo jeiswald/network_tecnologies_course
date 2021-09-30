@@ -1,13 +1,14 @@
-import java.io.BufferedOutputStream;
 import java.io.IOException;
-import java.net.*;
+import java.net.DatagramPacket;
+import java.net.InetAddress;
+import java.net.MulticastSocket;
 import java.util.Date;
 import java.util.Map;
 
 public class Sender extends Thread {
-    private InetAddress address;
-    private MulticastSocket socket;
-    private int port;
+    private final InetAddress address;
+    private final MulticastSocket socket;
+    private final int port;
     private final Map<InetAddress, Date> copiesOnline;
 
     public Sender(InetAddress ip, MulticastSocket socket, int port, Map<InetAddress, Date> copiesOnline) {
@@ -21,7 +22,7 @@ public class Sender extends Thread {
     public void run() {
         byte[] message = "I'm here".getBytes();
         DatagramPacket packet = new DatagramPacket(message, message.length, address, port);
-        while (!isInterrupted()) {
+        while (true) {
             try {
                 Date date = new Date();
                 boolean changed = false;

@@ -1,9 +1,9 @@
 import java.io.IOException;
 import java.net.DatagramPacket;
-import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
-import java.util.*;
+import java.util.Date;
+import java.util.Map;
 
 public class Listener extends Thread {
     //    private InetAddress address;
@@ -21,13 +21,12 @@ public class Listener extends Thread {
     @Override
     public void run() {
         byte[] buf = new byte[256];
-        while (!isInterrupted()) {
+        while (true) {
             try {
 //                System.out.println("before receive");
                 DatagramPacket packet = new DatagramPacket(buf, buf.length);
                 socket.receive(packet);
                 String received = new String(packet.getData(), 0, packet.getLength());
-//                System.out.println(received);
 //                System.out.println("after receive");
 
                 synchronized (copiesOnline) {
