@@ -18,6 +18,7 @@ public class Server extends Thread {
         try {
             while (true) {
                 Socket client = server.accept();
+                System.out.println("Accepted new client");
                 FileReceiver receiver = new FileReceiver(client);
                 clientList.add(receiver);
                 receiver.start();
