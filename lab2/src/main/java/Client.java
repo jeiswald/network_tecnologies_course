@@ -4,17 +4,15 @@ import java.net.Socket;
 import java.util.Arrays;
 
 public class Client {
-    Socket socket;
-    private DataOutputStream out;
-    private DataInputStream in;
-    private FileInputStream fileInputStream;
+    InetAddress address;
+    int port;
     private final int FILENAME_MAX_SIZE = 4096;
     private final long FILE_MAX_SIZE = 1048576000;
     private final int BUF_SIZE = 500;
 
     public Client(InetAddress address, int port) throws IOException {
-        socket = new Socket(address, port);
-        in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+        this.address = address;
+        this.port = port;
     }
 
     public void run(String path) throws IOException {
@@ -22,43 +20,40 @@ public class Client {
         if (!file.exists()) {
             throw new FileNotFoundException();
         }
-        out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
-        fileInputStream = new FileInputStream(file);
-        byte[] buf = new byte[BUF_SIZE];
-        int readBytes = 0;
-        try {
+        try (Socket socket = new Socket(address, port);
+             DataOutputStream out = new DataOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+             DataInputStream in = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+             FileInputStream fileInputStream = new FileInputStream(file);
+        ) {
+            byte[] buf = new byte[BUF_SIZE];
+            int readBytes = 0;
+
             byte[] name = file.getName().getBytes();
             if (name.length > FILENAME_MAX_SIZE) {
                 throw new IOException("File name is too long");
             }
             long size = file.length();
+            System.out.println("file size: " + size);
             if (size / 1024 > FILE_MAX_SIZE) {
                 throw new IOException("File size is too big");
             }
-            System.arraycopy(name, 0, buf, 0, name.length);
             out.writeInt(name.length);
-            out.write(buf, 0, name.length);
+            out.write(name, 0, name.length);
             out.writeLong(size);
-            out.flush();
-            while ((readBytes = fileInputStream.read(buf, 0, 300)) > 0) {
+            while ((readBytes = fileInputStream.read(buf)) > 0) {
                 out.write(buf, 0, readBytes);
-                out.flush();
+            }
+            out.flush();
+
+            boolean isTransmissionSuccessful = in.readBoolean();
+            if (isTransmissionSuccessful) {
+                System.out.println("Transmission successful");
+            } else {
+                System.out.println("Transmission has failed");
             }
         } catch (IOException e) {
-            out.close();
-            in.close();
-            fileInputStream.close();
             e.printStackTrace();
         }
 
-        boolean isTransmissionSuccessful = in.readBoolean();
-        if (isTransmissionSuccessful) {
-            System.out.println("Transmission successful");
-        } else {
-            System.out.println("Transmission has failed");
-        }
-
-        in.close();
-        fileInputStream.close();
     }
 }

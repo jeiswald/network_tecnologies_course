@@ -1,7 +1,7 @@
 import java.io.*;
 import java.net.Socket;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.*;
 
 public class FileReceiver extends Thread {
@@ -9,92 +9,97 @@ public class FileReceiver extends Thread {
     private DataInputStream in;
     private DataOutputStream out;
     private FileOutputStream fileOutputStream;
-    private final int FILESIZE_SIZE = Long.BYTES;
+    private final Timer timer;
     private final int BUF_SIZE = 500;
     private final String PATH_FOR_UPLOADING = "./uploads";
 
-    private final List<Long> readingInfo;
+    private long bytesHaveBeenRead = 0;
 
-    public FileReceiver(Socket client) {
+    public FileReceiver(Socket client, Timer timer) {
         this.client = client;
-        readingInfo = new ArrayList<>(2);
-        readingInfo.add(0, 0L);
-        readingInfo.add(1, 0L);
+        this.timer = timer;
     }
 
     @Override
     public void run() {
-        byte[] buf = new byte[BUF_SIZE];
-        Timer timer = new Timer();
-        //SpeedTesterTimer task = new SpeedTesterTimer(readingInfo, 3);
-        timer.schedule(new TimerTask() {
-            @Override
-            public void run() {
-                float speed;
-                synchronized (readingInfo) {
-                    speed = (float)readingInfo.get(1) / 3;
-                    readingInfo.set(0, readingInfo.get(0) + readingInfo.get(1));
-//            System.out.println("0 " + readingInfo.get(0));
-                    readingInfo.set(1, 0L);
-//            System.out.println("1 " + readingInfo.get(1));
-                }
-                System.out.println("Instant speed: " + speed);
-            }
-        }, 0, 3000);
+        SpeedTesterTimer task = new SpeedTesterTimer(3);
+        timer.schedule(task, 3000, 3000);
         Date date = new Date();
-        int filenameSize = 0;
-        long fileSize = 0;
+        int filenameSize;
+        long fileSize;
         try {
             in = new DataInputStream(new BufferedInputStream(client.getInputStream()));
             out = new DataOutputStream(new BufferedOutputStream(client.getOutputStream()));
 
-            int readBytes = 0;
             filenameSize = in.readInt();
-            synchronized (readingInfo) {
-                //readingInfo[1] += Integer.BYTES;
-                readingInfo.set(1, readingInfo.get(1) + Integer.BYTES);
-            }
-            int tmp;
-            while (readBytes != filenameSize) {
-                if (filenameSize - readBytes > BUF_SIZE) {
-                    tmp = in.read(buf, readBytes, BUF_SIZE);
-                } else {
-                    tmp = in.read(buf, readBytes, filenameSize - readBytes);
-                }
-                if (tmp > 0) {
-                    readBytes += tmp;
-                    synchronized (readingInfo) {
-                        readingInfo.set(1, readingInfo.get(1) + tmp);
-                    }
-                }
-            }
-            File file = createFile(PATH_FOR_UPLOADING, (new String(buf, StandardCharsets.UTF_8)).trim());
-            //System.out.println(new String(buf, StandardCharsets.UTF_8));
+            bytesHaveBeenRead += Integer.BYTES;
+            task.addToCurrentBytesNumber(Integer.BYTES);
+
+            String filename = readFilename(in, filenameSize);
+            System.out.println("file name: " + filename);
+            bytesHaveBeenRead += filenameSize;
+            task.addToCurrentBytesNumber(filenameSize);
+
+            File file = createFile(PATH_FOR_UPLOADING, filename);
+            System.out.println("file created");
             fileOutputStream = new FileOutputStream(file);
             fileSize = in.readLong();
-            synchronized (readingInfo) {
-                readingInfo.set(1, readingInfo.get(1) + Long.BYTES);
-            }
-            System.out.println(fileSize);
-            System.out.println(readingInfo.get(0));
-            while ((readBytes = in.read(buf, 0, BUF_SIZE)) > 0 &&
-                    (readingInfo.get(0) - (Integer.BYTES + Long.BYTES + filenameSize)) < fileSize) {
-                fileOutputStream.write(buf, 0, readBytes);
-                synchronized (readingInfo) {
-                    System.out.println(readingInfo.get(0));
-                    readingInfo.set(1, readingInfo.get(1) + readBytes);
-                }
-                fileOutputStream.flush();
-            }
-            System.out.println(readingInfo.get(0));
-            out.writeBoolean(readingInfo.get(0) == fileSize + Integer.BYTES + Long.BYTES + filenameSize);
+            System.out.println("file size:" + fileSize);
+            task.setExpectedCountOfBytes(fileSize + filenameSize + Long.BYTES + Integer.BYTES);
+            bytesHaveBeenRead += Long.BYTES;
+            task.addToCurrentBytesNumber(Long.BYTES);
+
+            readFileData(in, fileOutputStream, fileSize, task);
+            fileOutputStream.close();
+
+            out.writeBoolean(true);
             out.flush();
+
+            task.cancel();
+            timer.purge();
+            System.out.println("Average speed: " + task.getAverageSpeed((new Date().getTime() - date.getTime()) / 1000L));
+            if (task.executionCount() == 0) {
+                System.out.println("Instant speed: " + task.getAverageSpeed((new Date().getTime() - date.getTime()) / 1000L));
+            }
         } catch (Exception e) {
+            try {
+                out.writeBoolean(false);
+            } catch (IOException ioException) {
+                ioException.printStackTrace();
+            }
             e.printStackTrace();
         }
-        timer.cancel();
-        System.out.println("Instant speed: " + readingInfo.get(1) / 3);
-        System.out.println("Average speed: " + (float)readingInfo.get(0) / ((new Date()).getTime() - date.getTime()));
+        finally {
+            try {
+                client.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void readFileData(DataInputStream inputStream, FileOutputStream outputStream, long fileSize, SpeedTesterTimer task) throws IOException {
+        int readBytes;
+        long readTotalBytes = 0;
+        byte[] buf = new byte[BUF_SIZE];
+        while (readTotalBytes < fileSize && (readBytes = inputStream.read(buf, 0, BUF_SIZE)) != -1) {
+            outputStream.write(buf, 0, readBytes);
+            readTotalBytes += readBytes;
+            task.addToCurrentBytesNumber(readBytes);
+        }
+        outputStream.flush();
+        if (readTotalBytes != fileSize) {
+            throw new IOException("not enough bytes read");
+        }
+    }
+
+    private String readFilename(DataInputStream inputStream, int filenameSize) throws IOException {
+        byte[] buf = new byte[filenameSize];
+        int readBytes = 0;
+        while (readBytes < filenameSize) {
+            readBytes += inputStream.read(buf, readBytes, filenameSize - readBytes);
+        }
+        return new String(buf, StandardCharsets.UTF_8);
     }
 
     private File createFile(String pathname, String filename) throws IOException {
@@ -107,6 +112,11 @@ public class FileReceiver extends Thread {
             System.out.println("Directory already exists");
         }
         File file = new File(path, filename);
+        File fileForCreation = new File(filename);
+        Path pathForValidation = fileForCreation.toPath().normalize();
+        if (pathForValidation.startsWith("..")) {
+            throw new IOException("filename invalid");
+        }
         if (!file.exists()) {
             if (!file.createNewFile()) {
                 throw new IOException("Cannot create a file");
@@ -114,7 +124,10 @@ public class FileReceiver extends Thread {
                 return file;
             }
         } else {
-            throw new IOException("File already exist");
+            file.delete();
+            file.createNewFile();
+            return file;
+            //FIXME: //throw new IOException("File already exist");
         }
     }
 }
