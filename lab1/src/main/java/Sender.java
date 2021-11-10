@@ -3,6 +3,7 @@ import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.Map;
 
 public class Sender extends Thread {
@@ -27,9 +28,11 @@ public class Sender extends Thread {
                 Date date = new Date();
                 boolean changed = false;
                 synchronized (copiesOnline) {
-                    for (var entry : copiesOnline.entrySet()) {
-                        if (date.getTime() - entry.getValue().getTime() > 10000) {
-                            copiesOnline.remove(entry.getKey());
+                    Iterator<Map.Entry<InetAddress, Date>> iterator = copiesOnline.entrySet().iterator();
+                    while(iterator.hasNext()) {
+                        Map.Entry<InetAddress, Date> pair = iterator.next();
+                        if (date.getTime() - pair.getValue().getTime() > 10000) {
+                            copiesOnline.remove(pair.getKey());
                             changed = true;
                         }
                     }
