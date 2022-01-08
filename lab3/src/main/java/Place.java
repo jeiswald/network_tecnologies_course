@@ -3,8 +3,8 @@ public class Place {
     private String name;
     private String country;
     private String countrycode;
-    private float lat;
-    private float lng;
+    private double lat;
+    private double lng;
     private String osm_value;
 
     Place(String name, String country, String countrycode, float lat, float lng, String osm_value) {
@@ -41,7 +41,7 @@ public class Place {
         this.country = country;
     }
 
-    public void setLat(float lat) {
+    public void setLat(double lat) {
         this.lat = lat;
     }
 
@@ -49,7 +49,7 @@ public class Place {
         this.countrycode = countrycode;
     }
 
-    public void setLng(float lng) {
+    public void setLng(double lng) {
         this.lng = lng;
     }
 
@@ -69,11 +69,11 @@ public class Place {
         return name;
     }
 
-    public float getLat() {
+    public double getLat() {
         return lat;
     }
 
-    public float getLng() {
+    public double getLng() {
         return lng;
     }
 
