@@ -31,21 +31,21 @@ public class PlacesAsync {
     }
 
     private ArrayList<Place> formListAsync(Response response) {
-            ArrayList<Place> list = new ArrayList<>();
-            String stringToParse = response.getResponseBody();
-            JSONObject obj = new JSONObject(stringToParse);
-            JSONArray arr = obj.getJSONArray("hits");
-            for (int i = 0; i < arr.length(); i++) {
-                Place place = new Place();
-                place.setId(i);
-                place.setName(arr.getJSONObject(i).getString("name"));
-                place.setCountry(arr.getJSONObject(i).getString("country"));
-                place.setCountrycode(arr.getJSONObject(i).getString("countrycode"));
-                place.setLat(arr.getJSONObject(i).getJSONObject("point").getDouble("lat"));
-                place.setLng(arr.getJSONObject(i).getJSONObject("point").getDouble("lng"));
-                place.setOsm_value(arr.getJSONObject(i).getString("osm_value"));
-                list.add(place);
-            }
+        ArrayList<Place> list = new ArrayList<>();
+        String stringToParse = response.getResponseBody();
+        JSONObject obj = new JSONObject(stringToParse);
+        JSONArray arr = obj.getJSONArray("hits");
+        for (int i = 0; i < arr.length(); i++) {
+            Place place = new Place();
+            place.setId(i);
+            place.setName(arr.getJSONObject(i).getString("name"));
+            place.setCountry(arr.getJSONObject(i).getString("country"));
+            place.setCountrycode(arr.getJSONObject(i).getString("countrycode"));
+            place.setLat(arr.getJSONObject(i).getJSONObject("point").getDouble("lat"));
+            place.setLng(arr.getJSONObject(i).getJSONObject("point").getDouble("lng"));
+            place.setOsm_value(arr.getJSONObject(i).getString("osm_value"));
+            list.add(place);
+        }
         return list;
     }
 
@@ -90,7 +90,7 @@ public class PlacesAsync {
         return completableFuture;
     }
 
-    public CompletableFuture<CompletableFuture<CompletableFuture<LinkedList<InterestingLocation>>>>
+    public CompletableFuture<CompletableFuture<LinkedList<CompletableFuture<InterestingLocation>>>>
     getInterestingPlacesAround(double lat, double lng, double radius, String apiKey) throws ExecutionException, InterruptedException {
         String url = "http://api.opentripmap.com/0.1/ru/places/radius?radius=" +
                 +radius + "&lon=" + lng + "&lat=" + lat + "&apikey=" + apiKey;
@@ -102,7 +102,8 @@ public class PlacesAsync {
         return interestingPlacesRequest.thenApply(this::parseInterestingPlaces);
     }
 
-    public CompletableFuture<CompletableFuture<LinkedList<InterestingLocation>>> parseInterestingPlaces(Response response) {
+    public CompletableFuture<LinkedList<CompletableFuture<InterestingLocation>>>
+    parseInterestingPlaces(Response response) {
         CompletableFuture<HashMap<String, InterestingLocation>> completableFuture = new CompletableFuture<>();
         Executors.newCachedThreadPool().submit(() -> {
             HashMap<String, InterestingLocation> map = new HashMap<>();
@@ -122,28 +123,33 @@ public class PlacesAsync {
         return completableFuture.thenApply(this::getDescriptionOfLocations);
     }
 
-    public CompletableFuture<LinkedList<InterestingLocation>>
+    public LinkedList<CompletableFuture<InterestingLocation>>
     getDescriptionOfLocations(HashMap<String, InterestingLocation> map) {
         AsyncHttpClient client = Dsl.asyncHttpClient();
-        CompletableFuture<LinkedList<InterestingLocation>> completableFuture = new CompletableFuture<>();
-        Executors.newCachedThreadPool().submit(() -> {
-            for (var el : map.keySet()) {
+        LinkedList<CompletableFuture<InterestingLocation>> futureList = new LinkedList<>();
+        for (var el : map.keySet()) {
+            InterestingLocation l = map.get(el);
+            CompletableFuture<InterestingLocation> completableFuture = new CompletableFuture<>();
                 String url = "http://api.opentripmap.com/0.1/ru/places/xid/" + el + "?apikey=" + tripMapAriKey;
                 CompletableFuture<Response> interestingPlacesRequest = client
                         .prepareGet(url)
                         .execute()
                         .toCompletableFuture();
-                interestingPlacesRequest.thenApply(r -> {
-                    JSONObject obj = new JSONObject(r.getResponseBody());
-                    String desc = obj.getJSONObject("wikipedia_extracts").getString("text");
-                    String wiki = obj.getString("wikipedia");
-                    map.get(el).setDesc(desc);
-                    map.get(el).setWiki(wiki);
-                    return map;
-                });
-            }
-            completableFuture.complete(new LinkedList<>(map.values()));
-        });
-        return completableFuture;
+                interestingPlacesRequest.thenApply( response ->
+                Executors.newCachedThreadPool().submit(() -> {
+                    JSONObject obj = new JSONObject(response.getResponseBody());
+                    if (obj.has("wikipedia_extracts")) {
+                        String desc = obj.getJSONObject("wikipedia_extracts").getString("text");
+                        l.setDesc(desc);
+                    }
+                    if (obj.has("wikipedia")) {
+                        String wiki = obj.getString("wikipedia");
+                        l.setWiki(wiki);
+                    }
+                    completableFuture.complete(l);
+                }));
+            futureList.add(completableFuture);
+        }
+        return futureList;
     }
 }
