@@ -118,7 +118,7 @@ public class FileReceiver extends Thread {
             throw new IOException("filename invalid");
         }
         if (pathForValidation.isAbsolute()) {
-            file = new File(filename);
+            file = new File(path, pathForValidation.getFileName().toString());
         }
         if (!file.exists()) {
             if (!file.createNewFile()) {

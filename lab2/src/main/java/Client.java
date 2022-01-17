@@ -28,7 +28,8 @@ public class Client {
             byte[] buf = new byte[BUF_SIZE];
             int readBytes = 0;
 
-            byte[] name = file.getName().getBytes();
+//            byte[] name = file.getName().getBytes();
+            byte[] name = file.toString().getBytes();
             if (name.length > FILENAME_MAX_SIZE) {
                 throw new IOException("File name is too long");
             }
